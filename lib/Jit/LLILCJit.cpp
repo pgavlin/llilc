@@ -38,12 +38,14 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Errno.h"
 #include "llvm/Support/Format.h"
+#include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
@@ -123,6 +125,7 @@ LLILCJit::LLILCJit() {
   InitializeNativeTarget();
   InitializeNativeTargetAsmPrinter();
   InitializeNativeTargetAsmParser();
+  InitializeNativeTargetDisassembler();
 
   llvm::linkCoreCLRGC();
 }
@@ -234,6 +237,15 @@ CorJitResult LLILCJit::compileMethod(ICorJitInfo *JitInfo,
       CodeModel::JITDefault, OptLevel);
   Context.TM = TM;
 
+  bool Disasm = false;
+  const char *JitDisasm = getenv("COMPlus_JitDisasm");
+  if (JitDisasm != nullptr) {
+    const char *DebugClassName = nullptr;
+    const char *DebugMethodName = nullptr;
+    DebugMethodName = JitInfo->getMethodName(MethodInfo->ftn, &DebugClassName);
+    Disasm = strcmp(DebugMethodName, JitDisasm) == 0;
+  }
+
   // Construct the jitting layers.
   EEMemoryManager MM(&Context);
   ObjectLoadListener Listener(&Context);
@@ -273,6 +285,15 @@ CorJitResult LLILCJit::compileMethod(ICorJitInfo *JitInfo,
 
     *NativeEntry =
         (BYTE *)Compiler.findSymbol(Context.MethodName, false).getAddress();
+
+    if (Disasm) {
+      legacy::PassManager PM;
+
+      formatted_raw_ostream Out(dbgs());
+      TM->addPassesToEmitFile(PM, Out, TargetMachine::CGFT_AssemblyFile);
+
+      PM.run(*Context.CurrentModule);
+    }
 
     // TODO: ColdCodeSize, or separated code, is not enabled or included.
     *NativeSizeOfCode = Context.HotCodeSize + Context.ReadOnlyDataSize;
