@@ -91,14 +91,14 @@ void EEMemoryManager::reserveAllocationSpace(uintptr_t CodeSize,
   // LLVM's dynamic loader does not know where the EE's reservation was made.
   // So this gives the dyamic loader room to copy the RO sections, and later
   // the EE will copy from there to the place it really keeps unwind data.
-  uint32_t ReadOnlyDataSize = DataSizeRO;
+  uint32_t ReadOnlyDataSize = DataSizeRO + DataSizeRW;
   uint32_t ExceptionCount = 0;
 
   // Remap alignment to the EE notion of alignment
   CorJitAllocMemFlag Flag =
       CorJitAllocMemFlag::CORJIT_ALLOCMEM_DEFAULT_CODE_ALIGN;
 
-  assert(DataSizeRW == 0);
+  // assert(DataSizeRW == 0);
 
   uint8_t *HotBlock = nullptr;
   uint8_t *ColdBlock = nullptr;

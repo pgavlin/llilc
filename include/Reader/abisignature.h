@@ -57,6 +57,11 @@ class ABICallSignature : public ABISignature {
 private:
   const ReaderCallSignature &Signature; ///< The target function signature.
 
+  llvm::CallSite emitUnmanagedCall(GenIR &Reader, llvm::Value *Target,
+                                   bool MayThrow,
+                                   llvm::ArrayRef<llvm::Value *> Args,
+                                   llvm::Value *&Result) const;
+
 public:
   ABICallSignature(const ReaderCallSignature &Signature, GenIR &Reader,
                    const ABIInfo &TheABIInfo);
@@ -75,9 +80,10 @@ public:
   /// \param CallNode [out]   The call instruction.
   ///
   /// \returns The result of the call to the target.
-  llvm::Value *emitCall(GenIR &Reader, llvm::Value *Target, bool mayThrow,
+  llvm::Value *emitCall(GenIR &Reader, llvm::Value *Target, bool MayThrow,
                         llvm::ArrayRef<llvm::Value *> Args,
                         llvm::Value *IndirectionCell,
+                        llvm::Value *PInvokeCookie,
                         llvm::Value **CallNode) const;
 };
 

@@ -260,8 +260,8 @@ CorJitResult LLILCJit::compileMethod(ICorJitInfo *JitInfo,
   }
 
   // Clean up a bit
-  delete Context.EE;
-  Context.EE = nullptr;
+  // delete Context.EE;
+  // Context.EE = nullptr;
   delete Context.TheABIInfo;
   Context.TheABIInfo = nullptr;
 
