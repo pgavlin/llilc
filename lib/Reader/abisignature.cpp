@@ -42,6 +42,21 @@ static CallingConv::ID getLLVMCallingConv(CorInfoCallConv CC) {
   }
 }
 
+static CorInfoCallConv
+getNormalizedCallingConvention(const ReaderCallSignature &Signature) {
+  // NOTE: this is only correct for X86-64
+
+  CorInfoCallConv CC = Signature.getCallingConvention();
+  switch (CC) {
+  case CORINFO_CALLCONV_STDCALL:
+  case CORINFO_CALLCONV_THISCALL:
+  case CORINFO_CALLCONV_FASTCALL:
+    return CORINFO_CALLCONV_C;
+  default:
+    return CC;
+  }
+}
+
 ABISignature::ABISignature(const ReaderCallSignature &Signature, GenIR &Reader,
                            const ABIInfo &TheABIInfo) {
   const CallArgType &ResultType = Signature.getResultType();
@@ -56,7 +71,8 @@ ABISignature::ABISignature(const ReaderCallSignature &Signature, GenIR &Reader,
     LLVMArgTypes[I++] = Reader.getType(Arg.CorType, Arg.Class);
   }
 
-  CallingConv::ID CC = getLLVMCallingConv(Signature.getCallingConvention());
+  CallingConv::ID CC =
+      getLLVMCallingConv(getNormalizedCallingConvention(Signature));
   TheABIInfo.computeSignatureInfo(CC, LLVMResultType, LLVMArgTypes, Result,
                                   Args);
 
@@ -157,7 +173,7 @@ Value *ABICallSignature::emitCall(GenIR &Reader, llvm::Value *Target,
     assert(Signature.getCallingConvention() == CORINFO_CALLCONV_DEFAULT);
     CC = CallingConv::CLR_VirtualDispatchStub;
   } else {
-    CC = getLLVMCallingConv(Signature.getCallingConvention());
+    CC = getLLVMCallingConv(getNormalizedCallingConvention(Signature));
   }
   Call->setCallingConv(CC);
 
