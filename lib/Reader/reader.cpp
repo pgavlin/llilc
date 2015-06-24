@@ -4708,6 +4708,31 @@ ReaderBase::rdrMakeNewObjReturnNode(ReaderCallTargetData *CallTargetData,
   return genNewObjReturnNode(CallTargetData, ThisArg);
 }
 
+inline CorInfoHelpFunc eeGetHelperNum(CORINFO_METHOD_HANDLE method) {
+  // Helpers are marked by the fact that they are odd numbers
+  if (!(((size_t)method) & 1))
+    return (CORINFO_HELP_UNDEF);
+  return ((CorInfoHelpFunc)(((size_t)method) >> 2));
+}
+
+inline bool eeIsNativeMethod(CORINFO_METHOD_HANDLE method) {
+  return ((((size_t)method) & 0x2) == 0x2);
+}
+
+const char *ReaderBase::GetMethodName(CORINFO_METHOD_HANDLE method,
+  const char **classNamePtr,
+  ICorJitInfo *JitInfo) {
+  if (eeGetHelperNum(method)) {
+    return 0;
+  }
+
+  if (eeIsNativeMethod(method)) {
+    return 0;
+  }
+
+  return JitInfo->getMethodName(method, classNamePtr);
+}
+
 // Constraint calls in generic code.  Constraint calls are operations on generic
 // type variables,
 // e.g. "x.Incr()" where "x" has type "T" in generic code and where "T" supports
@@ -5003,6 +5028,17 @@ ReaderBase::rdrCall(ReaderCallTargetData *Data, ReaderBaseNS::CallOpcode Opcode,
         default:
           break;
         }
+      }
+    }
+
+    CORINFO_CLASS_HANDLE Class = Data->getClassHandle();
+    if (JitInfo->isInSIMDModule(Class)) {
+      IRNode *ReturnNode = nullptr;
+      CORINFO_METHOD_HANDLE Method = Data->getMethodHandle();
+      ReturnNode = generateSIMDIntrinsicCall(Class, Method);
+
+      if (ReturnNode) {
+        return ReturnNode;
       }
     }
 
@@ -8614,3 +8650,314 @@ void ReaderBase::resolveToken(mdToken Token, CorInfoTokenKind TokenType,
   return resolveToken(Token, getCurrentContext(), getCurrentModuleHandle(),
                       TokenType, ResolvedToken);
 }
+
+#pragma region SIMD_INTRINSICS
+
+//===----------------------------------------------------------------------===//
+//
+// SIMD Intrinsics
+//
+//===----------------------------------------------------------------------===//
+
+IRNode *ReaderBase::generateBinOp(int OperationCode, int VectorSize) {
+  IRNode *Arg2 = ReaderOperandStack->pop();
+  IRNode *Arg1 = ReaderOperandStack->pop();
+
+  IRNode *Vector1 = vectorCast(Arg1, 2);
+  IRNode *Vector2 = vectorCast(Arg2, 2);
+  if (Vector1 && Vector2) {
+    IRNode *opResult = 0;
+    switch (OperationCode) {
+    case 1:
+      opResult = vectorAdd(Vector1, Vector2);
+      break;
+    case 2:
+      opResult = vectorSub(Vector1, Vector2);
+      break;
+    case 3:
+
+      opResult = vectorMul(Vector1, Vector2);
+      break;
+    case 4:
+      opResult = vectorDiv(Vector1, Vector2);
+      break;
+    }
+    if (opResult) {
+      return vectorBackCast(opResult, Arg1);
+    }
+  }
+
+  ReaderOperandStack->push(Arg1);
+  ReaderOperandStack->push(Arg2);
+  return 0;
+}
+
+inline size_t roundUp(size_t size, size_t mult = sizeof(size_t)) {
+  assert(mult && ((mult & (mult - 1)) == 0)); // power of two test
+
+  return (size + (mult - 1)) & ~(mult - 1);
+}
+
+IRNode *ReaderBase::generateSIMDIntrinsicCall(CORINFO_CLASS_HANDLE Class,
+  CORINFO_METHOD_HANDLE Method) {
+
+  static CORINFO_CLASS_HANDLE SIMDFloatHandle = 0;
+  static CORINFO_CLASS_HANDLE SIMDDoubleHandle = 0;
+  static CORINFO_CLASS_HANDLE SIMDIntHandle = 0;
+  static CORINFO_CLASS_HANDLE SIMDUShortHandle = 0;
+  static CORINFO_CLASS_HANDLE SIMDUByteHandle = 0;
+  static CORINFO_CLASS_HANDLE SIMDShortHandle = 0;
+  static CORINFO_CLASS_HANDLE SIMDByteHandle = 0;
+  static CORINFO_CLASS_HANDLE SIMDLongHandle = 0;
+  static CORINFO_CLASS_HANDLE SIMDUIntHandle = 0;
+  static CORINFO_CLASS_HANDLE SIMDULongHandle = 0;
+  static CORINFO_CLASS_HANDLE SIMDVector2Handle = 0;
+  static CORINFO_CLASS_HANDLE SIMDVector3Handle = 0;
+  static CORINFO_CLASS_HANDLE SIMDVector4Handle = 0;
+  static CORINFO_CLASS_HANDLE SIMDVectorHandle = 0;
+  enum BASE_TYPE {
+    TYP_UNKNOWN,
+    TYP_FLOAT,
+    TYP_DOUBLE,
+    TYP_INT,
+    TYP_CHAR,
+    TYP_UBYTE,
+    TYP_SHORT,
+    TYP_BYTE,
+    TYP_LONG,
+    TYP_UINT,
+    TYP_ULONG
+  };
+  const size_t FLOAT_SIZE = 4;
+  const size_t TARGET_POINTER_SIZE = 8;
+  IRNode *ReturnNode = 0;
+  size_t Size = 0;
+  BASE_TYPE BaseType = BASE_TYPE::TYP_UNKNOWN;
+  if (Class == SIMDFloatHandle) {
+    BaseType = TYP_FLOAT;
+    // Vector<T> unimplemented yet.
+    return 0;
+  }
+  else if (Class == SIMDDoubleHandle) {
+    BaseType = TYP_DOUBLE;
+    // Vector<T> unimplemented yet.
+    return 0;
+  }
+  else if (Class == SIMDIntHandle) {
+    BaseType = TYP_INT;
+    // Vector<T> unimplemented yet.
+    return 0;
+  }
+  else if (Class == SIMDUShortHandle) {
+    BaseType = TYP_CHAR;
+    // Vector<T> unimplemented yet.
+    return 0;
+  }
+  else if (Class == SIMDUByteHandle) {
+    BaseType = TYP_UBYTE;
+    // Vector<T> unimplemented yet.
+    return 0;
+  }
+  else if (Class == SIMDShortHandle) {
+    BaseType = TYP_SHORT;
+    // Vector<T> unimplemented yet.
+    return 0;
+  }
+  else if (Class == SIMDByteHandle) {
+    BaseType = TYP_BYTE;
+    // Vector<T> unimplemented yet.
+    return 0;
+  }
+  else if (Class == SIMDLongHandle) {
+    BaseType = TYP_LONG;
+    // Vector<T> unimplemented yet.
+    return 0;
+  }
+  else if (Class == SIMDUIntHandle) {
+    BaseType = TYP_UINT;
+    // Vector<T> unimplemented yet.
+    return 0;
+  }
+  else if (Class == SIMDULongHandle) {
+    BaseType = TYP_ULONG;
+    // Vector<T> unimplemented yet.
+    return 0;
+  }
+  else if (Class == SIMDVector2Handle) {
+    Size = 2;
+    BaseType = TYP_FLOAT;
+  }
+  else if (Class == SIMDVector3Handle) {
+    Size = 3;
+    BaseType = TYP_FLOAT;
+  }
+  else if (Class == SIMDVector4Handle) {
+    Size = 4;
+    BaseType = TYP_FLOAT;
+  }
+  else if (Class == SIMDVectorHandle) {
+    // Vector<T> unimplemented yet.
+    return 0;
+  }
+  if (BaseType == TYP_UNKNOWN) {
+    // Doesn't match with any of the cached type handles.
+    // Obtain base type by parsing fully qualified class name.
+    const char *ClassNameBuffer = getClassName(Class);
+    std::string ClassName = ClassNameBuffer;
+    if (ClassName.compare(0, 16, "System.Numerics.") == 0) {
+      if (ClassName.compare(16, 9, "Vector`1[") == 0) {
+        if (ClassName.compare(25, 13, "System.Single") == 0) {
+          SIMDFloatHandle = Class;
+          BaseType = TYP_FLOAT;
+          printf("  Found type SIMD Vector<Float>\n");
+        }
+        else if (ClassName.compare(25, 12, "System.Int32") == 0) {
+          SIMDIntHandle = Class;
+          BaseType = TYP_INT;
+        }
+        else if (ClassName.compare(25, 13, "System.UInt16") == 0) {
+          SIMDUShortHandle = Class;
+          BaseType = TYP_CHAR;
+        }
+        else if (ClassName.compare(25, 11, "System.Byte") == 0) {
+          SIMDUByteHandle = Class;
+          BaseType = TYP_UBYTE;
+        }
+        else if (ClassName.compare(25, 13, "System.Double") == 0) {
+          SIMDDoubleHandle = Class;
+          BaseType = TYP_DOUBLE;
+          printf("  Found type SIMD Vector<Double>\n");
+        }
+        else if (ClassName.compare(25, 12, "System.Int64") == 0) {
+          SIMDLongHandle = Class;
+          BaseType = TYP_LONG;
+          printf("  Found type SIMD Vector<Long>\n");
+        }
+        else if (ClassName.compare(25, 12, "System.Int16") == 0) {
+          SIMDShortHandle = Class;
+          BaseType = TYP_SHORT;
+          printf("  Found type SIMD Vector<short>\n");
+        }
+        else if (ClassName.compare(25, 12, "System.SByte") == 0) {
+          SIMDByteHandle = Class;
+          BaseType = TYP_BYTE;
+          printf("  Found type SIMD Vector<byte>\n");
+        }
+        else if (ClassName.compare(25, 13, "System.UInt32") == 0) {
+          SIMDUIntHandle = Class;
+          BaseType = TYP_UINT;
+          printf("  Found type SIMD Vector<uint>\n");
+        }
+        else if (ClassName.compare(25, 13, "System.UInt64") == 0) {
+          SIMDULongHandle = Class;
+          BaseType = TYP_ULONG;
+          printf("  Found type SIMD Vector<ulong>\n");
+        }
+        else {
+          printf("  Unknown SIMD Vector<T>\n");
+        }
+        // Vector<T> unimplemented yet.
+        return 0;
+      }
+      else if (ClassName.compare(16, 8, "Vector2") == 0) {
+        SIMDVector2Handle = Class;
+
+        BaseType = TYP_FLOAT;
+        Size = 2;
+        assert(Size * FLOAT_SIZE ==
+          roundUp(JitInfo->getClassSize(Class), TARGET_POINTER_SIZE));
+        printf(" Found Vector2\n");
+      }
+      else if (ClassName.compare(16, 8, "Vector3") == 0) {
+        SIMDVector3Handle = Class;
+
+        BaseType = TYP_FLOAT;
+        Size = 3;
+        assert(Size * FLOAT_SIZE == JitInfo->getClassSize(Class));
+        printf(" Found Vector3\n");
+      }
+      else if (ClassName.compare(16, 8, "Vector4") == 0) {
+        SIMDVector4Handle = Class;
+
+        BaseType = TYP_FLOAT;
+        Size = 4;
+        assert(Size * FLOAT_SIZE ==
+          roundUp(JitInfo->getClassSize(Class), TARGET_POINTER_SIZE));
+        printf(" Found Vector4\n");
+      }
+      else if (ClassName.compare(16, 6, "Vector") == 0) {
+        SIMDVectorHandle = Class;
+        printf(" Found type Vector\n");
+        // Vector<T> unimplemented yet.
+        return 0;
+      }
+      else {
+        printf("  Unknown SIMD Type\n");
+      }
+    }
+  }
+
+  if (Class == SIMDVectorHandle) {
+    // All of the supported intrinsics on this static class take a first
+    // argument that's a vector,
+    // which determines the baseType.
+    // The exception is the IsHardwareAccelerated property, which is handled as
+    // a special case.
+    assert(BaseType == TYP_UNKNOWN);
+    printf("Vector Intrinsic, unsupported yet");
+    return 0;
+  }
+
+  if (BaseType == TYP_UNKNOWN) {
+    printf("NOT a SIMD Intrinsic: unsupported baseType\n");
+    return 0;
+  }
+  assert(BaseType == TYP_FLOAT && Size >= 2 && Size <= 4);
+
+  CORINFO_SIG_INFO &SigInfo = MethodInfo->locals;
+  int ArgsCount = SigInfo.numArgs;
+  if (SigInfo.hasThis()) {
+    ArgsCount += 1;
+  }
+  const char *ModuleName;
+  const char *MethodName = GetMethodName(Method, &ModuleName, JitInfo);
+  enum OPERATION_TYPE { UNDEF, CTOR, BINOP };
+  OPERATION_TYPE OperationType = UNDEF;
+  int OpCode = 0;
+  if (!strcmp(MethodName, ".ctor")) {
+    OperationType = CTOR;
+  }
+  else if (!strcmp(MethodName, "op_Addition")) {
+    OperationType = BINOP;
+    OpCode = 1;
+  }
+  else if (!strcmp(MethodName, "op_Subtraction")) {
+    OperationType = BINOP;
+    OpCode = 2;
+  }
+  else if (!strcmp(MethodName, "op_Multiply")) {
+    OperationType = BINOP;
+    OpCode = 3;
+  }
+  else if (!strcmp(MethodName, "op_Division")) {
+    OperationType = BINOP;
+    OpCode = 4;
+  }
+  if (OperationType == BINOP) {
+    if (ReaderOperandStack->size() >= 2) {
+      ReturnNode = generateBinOp(OpCode, Size);
+      if (ReturnNode) {
+        return ReturnNode;
+      }
+    }
+  }
+  else if (OperationType == CTOR) {
+    printf("Ctor Intrinsic, unsupported yet\n");
+  }
+  else {
+    printf("Other Intrinsic, unsupported yet\n");
+  }
+  return ReturnNode;
+}
+
+#pragma endregion

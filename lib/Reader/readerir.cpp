@@ -7299,3 +7299,119 @@ void VerificationState::print() {
 #endif
 
 #pragma endregion
+
+#pragma region SIMD_INTRISNICS
+
+//===----------------------------------------------------------------------===//
+//
+// SIMD Intrinsics
+//
+//===----------------------------------------------------------------------===//
+
+// Cast struct to LLVM Vector Type
+
+IRNode *GenIR::vectorCast(IRNode *Arg, size_t VectorSize) {
+  // TODO sandreenko : check order of static init.
+  static LLVMContext &Context = LLVMBuilder->getContext();
+  static Type *FloatTy = Type::getFloatTy(Context);
+  static Type *FloatPtrTy = Type::getFloatPtrTy(Context);
+  static Type *Vector2Ty =
+    VectorType::get(llvm::Type::getFloatTy(LLVMBuilder->getContext()), 2);
+  static Type *Vector2PtrTy = PointerType::get(Vector2Ty, 0);
+  static Type *Vector3Ty =
+    VectorType::get(llvm::Type::getFloatTy(LLVMBuilder->getContext()), 3);
+  static Type *Vector3PtrTy = PointerType::get(Vector3Ty, 0);
+  static Type *Vector4Ty =
+    VectorType::get(llvm::Type::getFloatTy(LLVMBuilder->getContext()), 4);
+  static Type *Vector4PtrTy = PointerType::get(Vector4Ty, 0);
+
+  Type *ArgType = Arg->getType();
+  std::string buf;
+  raw_string_ostream st(buf);
+  ArgType->print(st); // TODO sandreenko : it works very strange.
+  std::string Name = st.str();
+
+  switch (VectorSize) {
+  case 2:
+    if (Name != "%System.Numerics.Vector2*") {
+      assert(Name == "float");
+      return 0;
+    }
+
+    break;
+  case 3:
+    if (Name != "%System.Numerics.Vector3*") {
+      assert(Name == "float");
+      return 0;
+    }
+    break;
+  case 4:
+    if (Name != "%System.Numerics.Vector4*") {
+      assert(Name == "float");
+      return 0;
+    }
+    break;
+  default:
+    break;
+  }
+  Value *Vector = 0;
+  Value *VectorPtr = 0;
+  Value *Ptr = 0;
+  Ptr = LLVMBuilder->CreateBitCast(Arg, FloatPtrTy);
+  Value *Result = 0;
+  switch (VectorSize) {
+  case 2:
+    VectorPtr = LLVMBuilder->CreateBitCast(Ptr, Vector2PtrTy);
+    break;
+  case 3:
+    VectorPtr = LLVMBuilder->CreateBitCast(Ptr, Vector3PtrTy);
+    break;
+  case 4:
+    VectorPtr = LLVMBuilder->CreateBitCast(Ptr, Vector4PtrTy);
+    break;
+  default:
+    break;
+  }
+  assert(VectorPtr);
+  Result = LLVMBuilder->CreateLoad(VectorPtr);
+  assert(Result);
+  return (IRNode *)Result;
+}
+
+// BinOperations
+
+// TODO: sandreenko Check float type, support other types.
+
+IRNode *GenIR::vectorAdd(IRNode *Vector1, IRNode *Vector2) {
+  return (IRNode *)LLVMBuilder->CreateFAdd(Vector1, Vector2);
+}
+
+IRNode *GenIR::vectorSub(IRNode *Vector1, IRNode *Vector2) {
+  return (IRNode *)LLVMBuilder->CreateFSub(Vector1, Vector2);
+}
+
+IRNode *GenIR::vectorMul(IRNode *Vector1, IRNode *Vector2) {
+  return (IRNode *)LLVMBuilder->CreateFMul(Vector1, Vector2);
+}
+
+IRNode *GenIR::vectorDiv(IRNode *Vector1, IRNode *Vector2) {
+  return (IRNode *)LLVMBuilder->CreateFDiv(Vector1, Vector2);
+}
+
+// Cast struct to original Type.
+
+IRNode *GenIR::vectorBackCast(IRNode *Vector, IRNode *Dst) {
+  PointerType *DstTypePointer = (PointerType *)((Value *)Dst)->getType();
+  Type *DstType = DstTypePointer->getElementType();
+  Value *MemoryPlace = createTemporary(DstType);
+  Type *VectorTy =
+    VectorType::get(llvm::Type::getFloatTy(LLVMBuilder->getContext()), 2);
+  Type *VectorPtrTy = PointerType::get(VectorTy, 0);
+  Value *VectorPtr =
+    LLVMBuilder->CreateBitOrPointerCast(MemoryPlace, VectorPtrTy);
+  LLVMBuilder->CreateStore(Vector, VectorPtr);
+  setValueRepresentsStruct(MemoryPlace);
+  return (IRNode *)MemoryPlace;
+}
+
+#pragma endregion

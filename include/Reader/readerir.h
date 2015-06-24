@@ -1545,6 +1545,13 @@ private:
       std::vector<std::pair<uint32_t, llvm::Type *>> &OverlapFields,
       std::vector<llvm::Type *> &Fields);
 
+  IRNode *vectorCast(IRNode *Arg, size_t VectorSize);
+  IRNode *vectorAdd(IRNode *Vector1, IRNode *Vector2);
+  IRNode *vectorSub(IRNode *Vector1, IRNode *Vector2);
+  IRNode *vectorMul(IRNode *Vector1, IRNode *Vector2);
+  IRNode *vectorDiv(IRNode *Vector1, IRNode *Vector2);
+  IRNode *vectorBackCast(IRNode *Vector, IRNode *Dst);
+
 private:
   LLILCJitContext *JitContext;
   ABIInfo *TheABIInfo;

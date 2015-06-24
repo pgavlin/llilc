@@ -328,7 +328,7 @@ public:
   /// \brief Return begin iterator for iterating from bottom to top of stack.
   iterator begin() { return Stack.begin(); }
 
-  /// \brief Return begin iterator for iterating from bottom to top of stack.
+  /// \brief Return end iterator for iterating from bottom to top of stack.
   iterator end() { return Stack.end(); }
 
 #if defined(_DEBUG)
@@ -3267,6 +3267,61 @@ public:
 #endif
 
   static bool rdrIsMethodVirtual(uint32_t MethodAttribs);
+
+  /// \brief Return MethodName for non helper and non native Methods.
+  ///
+  /// \param method  Method handle for the target Method.
+  /// \param classNamePtr out param, Module name.
+  /// \param JitInfo The jit interface for this method
+  /// \returns MethodName.
+  // TODO sandreenko : change cases to LLILC rules or transfer to coreclr.
+  const char *GetMethodName(CORINFO_METHOD_HANDLE method,
+                            const char **classNamePtr, ICorJitInfo *JitInfo);
+
+  /// \brief Return result of binary operation on SIMD Vector Types.
+  /// \brief It gets arguments from stack.
+  ///
+  /// \param OperationCode code to be done. // TODO sandreenko : change to enum
+  /// later.
+  /// \param VectorSize Length of our Vector Type ( in floats).
+  /// \returns IRNode* !=0 -> Result of Intrinsic call,
+  ///  IRNode* == 0 -> we can't produce intrinsic.
+  IRNode *generateBinOp(int OperationCode, int VectorSize);
+
+  /// \brief Return IRNode* of LLVM Vector Type. Cast Arg like pointer to target
+  /// Vector with VectorSize.
+  ///
+  /// \param Arg LLVM Value* for cast.
+  /// \param VectorSize Target vector size.
+  /// \returns IRNode * represents LLVM Value* with type <VectorSize * float>*
+  virtual IRNode *vectorCast(IRNode *Arg, size_t VectorSize) = 0;
+
+  /// \brief Return IRNode* of LLVM structType for VectorN. Cast Arg like
+  /// pointer to Dst type.
+  ///
+  /// \param Vector LLVM Value* with type <VectorSize * float>*  for cast.
+  /// \param Dst Value* with getType() = struct VectorN.
+  /// \returns IRNode * represents LLVM struct VectorN.
+  virtual IRNode *vectorBackCast(IRNode *Vector, IRNode *Dst) = 0;
+
+  /// \brief Return IRNode* Result of BinOp.
+  ///
+  /// \param Vector1 the first argument for BinOp. Type <VectorSize * float>.
+  /// \param Vector2 the second argument for BinOp. Type <VectorSize * float>.
+  /// \returns IRNode * result with type <VectorSize * float>.
+  virtual IRNode *vectorAdd(IRNode *Vector1, IRNode *Vector2) = 0;
+  virtual IRNode *vectorSub(IRNode *Vector1, IRNode *Vector2) = 0;
+  virtual IRNode *vectorMul(IRNode *Vector1, IRNode *Vector2) = 0;
+  virtual IRNode *vectorDiv(IRNode *Vector1, IRNode *Vector2) = 0;
+
+  /// \brief Return IRNode* Result of Intrinsic or 0, if it wasn't success.
+  ///
+  /// \param Class The class handle for the call target method's class.
+  /// \param  Method handle for the target Method.
+  /// \returns IRNode * result.
+
+  IRNode *generateSIMDIntrinsicCall(CORINFO_CLASS_HANDLE Class,
+                                    CORINFO_METHOD_HANDLE Method);
 
 private:
   ///////////////////////////////////////////////////////////////////////
