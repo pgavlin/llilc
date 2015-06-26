@@ -45,7 +45,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Errno.h"
 #include "llvm/Support/Format.h"
-#include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
@@ -289,7 +288,7 @@ CorJitResult LLILCJit::compileMethod(ICorJitInfo *JitInfo,
     if (Disasm) {
       legacy::PassManager PM;
 
-      formatted_raw_ostream Out(dbgs());
+      buffer_ostream Out(dbgs());
       TM->addPassesToEmitFile(PM, Out, TargetMachine::CGFT_AssemblyFile);
 
       PM.run(*Context.CurrentModule);
@@ -472,6 +471,9 @@ void ObjectLoadListener::getDebugInfoForObject(
 
   for (symbol_iterator SI = DebugObj.symbol_begin(), E = DebugObj.symbol_end();
        SI != E; ++SI) {
+  if ((SI->getFlags() & SymbolRef::SF_Common) == 0)
+      continue;
+
     SymbolRef::Type SymType;
     if (SI->getType(SymType))
       continue;
