@@ -40,6 +40,9 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/MC/MCDisassembler.h"
+#include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCInstPrinter.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Object/SymbolSize.h"
 #include "llvm/Support/CommandLine.h"
@@ -287,12 +290,32 @@ CorJitResult LLILCJit::compileMethod(ICorJitInfo *JitInfo,
         (BYTE *)Compiler.findSymbol(Context.MethodName, false).getAddress();
 
     if (Disasm) {
-      legacy::PassManager PM;
+      const MCSubtargetInfo* STI = TM->getMCSubtargetInfo();
+      const MCAsmInfo* AI = TM->getMCAsmInfo();
+      const MCInstrInfo* II = TM->getMCInstrInfo();
+      const MCRegisterInfo* RI = TM->getMCRegisterInfo();
 
-      buffer_ostream Out(dbgs());
-      TM->addPassesToEmitFile(PM, Out, TargetMachine::CGFT_AssemblyFile);
+      MCContext Ctx(AI, RI, nullptr);
+      std::unique_ptr<const MCDisassembler> Dis(
+          TheTarget->createMCDisassembler(*STI, Ctx));
+      assert(Dis != nullptr);
 
-      PM.run(*Context.CurrentModule);
+      std::unique_ptr<MCInstPrinter> Print(
+          TheTarget->createMCInstPrinter(Triple(LLILC_TARGET_TRIPLE), 0, *AI, *II, *RI));
+      assert(Print != nullptr);
+
+      ArrayRef<uint8_t> Bytes(*NativeEntry, Context.HotCodeSize);
+      for (uint64_t Address = (uint64_t)*NativeEntry, Size = 0;
+           Bytes.size() > 0; Bytes = Bytes.slice(Size), Address += Size) {
+        MCInst Inst;
+        MCDisassembler::DecodeStatus Status =
+            Dis->getInstruction(Inst, Size, Bytes, Address, nulls(), nulls());
+        if (Status == llvm::MCDisassembler::Fail)
+          break;
+        dbgs() << Print->formatHex(Address);
+        Print->printInst(&Inst, dbgs(), "", *STI);
+        dbgs() << "\n";
+      }
     }
 
     // TODO: ColdCodeSize, or separated code, is not enabled or included.
