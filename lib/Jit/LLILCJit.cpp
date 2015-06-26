@@ -46,7 +46,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Errno.h"
 #include "llvm/Support/Format.h"
-#include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
@@ -290,7 +289,7 @@ CorJitResult LLILCJit::compileMethod(ICorJitInfo *JitInfo,
     if (Disasm) {
       legacy::PassManager PM;
 
-      formatted_raw_ostream Out(dbgs());
+      buffer_ostream Out(dbgs());
       TM->addPassesToEmitFile(PM, Out, TargetMachine::CGFT_AssemblyFile);
 
       PM.run(*Context.CurrentModule);
